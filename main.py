@@ -1,6 +1,6 @@
 import time
 from scapy.all import sr1
-from packets import build_packet
+from packets import create_probe
 from parser import parse_response
 
 
@@ -31,12 +31,12 @@ def traceroute(
             for protocol in ["UDP", "TCP", "ICMP"]:
 
                 # 🔹 Build packet (Person 1)
-                packet = build_packet(
-                    target_ip=target_ip,
-                    ttl=ttl,
-                    protocol=protocol,
-                    dport=dport,
-                    packet_size=packet_size
+                packet = create_probe(
+                    target_ip,
+                    ttl,
+                    protocol,
+                    dport,
+                    packet_size
                 )
 
                 # 🔹 Send + measure RTT
