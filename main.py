@@ -1,7 +1,6 @@
 import time
-from scapy.all import sr1
 from packets import create_probe
-from parser import parse_response
+from parser import send_and_parse
 
 
 def traceroute(
@@ -16,21 +15,20 @@ def traceroute(
 ):
     results = []
 
-    print(f"Tracing route to {target_ip}...\n")
+    print(f"\nTracing route to {target_ip}...\n")
 
-    # TTL loop (the staircase)
+    # 🔁 TTL loop
     for ttl in range(min_ttl, max_ttl + 1):
         print(f"TTL = {ttl}")
-
         ttl_results = []
 
-        # Series loop
-        for series in range(num_series):
+        # 🔁 Series loop
+        for _ in range(num_series):
 
-            # Protocol loop
+            # 🔁 Protocol loop
             for protocol in ["UDP", "TCP", "ICMP"]:
 
-                # 🔹 Build packet (Person 1)
+                # 🛠️ Build packet (Person 1)
                 packet = create_probe(
                     target_ip,
                     ttl,
@@ -39,42 +37,33 @@ def traceroute(
                     packet_size
                 )
 
-                # 🔹 Send + measure RTT
-                start = time.perf_counter()
-                response = sr1(packet, timeout=timeout, verbose=0)
-                end = time.perf_counter()
+                # 📡 Send + parse (Person 2)
+                result = send_and_parse(packet, timeout)
 
-                # RTT in ms
-                rtt = (end - start) * 1000
-
-                # 🔹 Parse response (Person 2)
-                result = parse_response(
-                    response=response,
-                    protocol=protocol,
-                    rtt=rtt,
-                    ttl=ttl
-                )
+                # 🧠 Add orchestrator-controlled fields
+                result["ttl"] = ttl
+                result["proto"] = protocol
 
                 ttl_results.append(result)
 
-                # Print live output (like real traceroute)
-                if result["ip"] is None:
+                # 🖨️ Print output
+                if result["ip"] == "*":
                     print(f"  {protocol}: *")
                 else:
-                    print(f"  {protocol}: {result['ip']} ({result['name']}) - {result['rtt']:.2f} ms")
+                    print(f"  {protocol}: {result['ip']} ({result['name']}) - {result['rtt']} ms")
 
-                # 🔹 Stop if destination reached
-                if result["is_destination"]:
+                # 🛑 Stop if destination reached
+                if result["is_final"]:
                     results.append(ttl_results)
                     print("\n✅ Destination reached!\n")
                     return results
 
-                # 🔹 Wait between packets
+                # ⏱️ Wait between packets
                 time.sleep(wait_time)
 
         results.append(ttl_results)
 
-    print("\n⚠️ Max TTL reached without hitting destination.\n")
+    print("\n⚠️ Max TTL reached without reaching destination.\n")
     return results
 
 
@@ -83,6 +72,6 @@ if __name__ == "__main__":
     target = input("Enter target IP: ")
     results = traceroute(target)
 
-    print("\nFinal Results:")
+    print("\n📊 Final Results:")
     for hop in results:
         print(hop)
