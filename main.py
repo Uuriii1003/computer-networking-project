@@ -1,10 +1,12 @@
 import time
+import json
 from scapy.all import sr1
 from packets import create_probe
 from parser import send_and_parse
 import os
 import sys
 
+#Permission check
 if os.geteuid() != 0:
     print("Error: This script must be run with 'sudo' to send raw packets.")
     sys.exit(1)
@@ -86,9 +88,36 @@ def traceroute(
 
 # 🚀 Entry point
 if __name__ == "__main__":
-    target = input("Enter target IP: ")
-    results = traceroute(target)
+    #Read IPs from the text file
+    targets_file = "targets.txt"
 
-    print("\nFinal Results:")
-    for hop in results:
-        print(hop)
+    if not os.path.exists(targets_file):
+        print(f"❌ Error: {targets_file} not found. Please create it first.")
+        sys.exit(1)
+    
+    with open(targets_file, "r") as f:
+        targets = [line.strip() for line in f if line.strip()]
+
+    all_data = {}
+
+    #Run traceroute for each IP
+    for ip in targets:
+        print(f"\n" + "="*40)
+        print(f"TRACING: {ip}")
+        print("="*40)
+
+        try:
+            hop_data = traceroute(ip)
+            all_data[ip] = hop_data
+        except Exception as e:
+            print(f"Failed to trace {ip}: {e}")
+        
+        time.sleep(1)
+
+
+    #Save all results to a JSON file
+    output_file = "results.json"
+    with open(output_file, "w") as f:
+        json.dump(all_data, f, indent=4)
+
+    print(f"\nResults saved to {output_file}")
