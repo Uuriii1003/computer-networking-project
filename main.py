@@ -1,9 +1,12 @@
 import time
+import json
+from scapy.all import sr1
 from packets import create_probe
 from parser import send_and_parse
 import os
 import sys
 
+#Permission check
 if os.geteuid() != 0:
     print("Error: This script must be run with 'sudo' to send raw packets.")
     sys.exit(1)
@@ -21,20 +24,21 @@ def traceroute(
 ):
     results = []
 
-    print(f"\nTracing route to {target_ip}...\n")
+    print(f"Tracing route to {target_ip}...\n")
 
-    # 🔁 TTL loop
+    # TTL loop (the staircase)
     for ttl in range(min_ttl, max_ttl + 1):
         print(f"TTL = {ttl}")
+
         ttl_results = []
 
-        # 🔁 Series loop
-        for _ in range(num_series):
+        # Series loop
+        for series in range(num_series):
 
-            # 🔁 Protocol loop
+            # Protocol loop
             for protocol in ["UDP", "TCP", "ICMP"]:
 
-                # 🛠️ Build packet (Person 1)
+                # 🔹 Build packet (Person 1)
                 packet = create_probe(
                     target_ip,
                     ttl,
@@ -43,14 +47,16 @@ def traceroute(
                     packet_size
                 )
 
-                # 📡 Send + parse (Person 2)
-                result = send_and_parse(packet, timeout)
+                # 🔹 Send + measure RTT
+                start = time.perf_counter()
+                response = sr1(packet, timeout=timeout, verbose=0)
+                end = time.perf_counter()
 
                 # RTT in ms
                 rtt = (end - start) * 1000
 
                 # 🔹 Parse response (Person 2)
-                result = parse_response(
+                result = send_and_parse(
                     response=response,
                     protocol=protocol,
                     rtt=rtt,
@@ -59,32 +65,59 @@ def traceroute(
 
                 ttl_results.append(result)
 
-                # 🖨️ Print output
-                if result["ip"] == "*":
+                # Print live output (like real traceroute)
+                if result["ip"] is None:
                     print(f"  {protocol}: *")
                 else:
-                    print(f"  {protocol}: {result['ip']} ({result['name']}) - {result['rtt']} ms")
+                    print(f"  {protocol}: {result['ip']} ({result['name']}) - {result['rtt']:.2f} ms")
 
-                # 🛑 Stop if destination reached
-                if result["is_final"]:
+                # 🔹 Stop if destination reached
+                if result["is_destination"]:
                     results.append(ttl_results)
                     print("\n✅ Destination reached!\n")
                     return results
 
-                # ⏱️ Wait between packets
+                # 🔹 Wait between packets
                 time.sleep(wait_time)
 
         results.append(ttl_results)
 
-    print("\n⚠️ Max TTL reached without reaching destination.\n")
+    print("\n⚠️ Max TTL reached without hitting destination.\n")
     return results
 
 
 # 🚀 Entry point
 if __name__ == "__main__":
-    target = input("Enter target IP: ")
-    results = traceroute(target)
+    #Read IPs from the text file
+    targets_file = "targets.txt"
 
-    print("\n📊 Final Results:")
-    for hop in results:
-        print(hop)
+    if not os.path.exists(targets_file):
+        print(f"❌ Error: {targets_file} not found. Please create it first.")
+        sys.exit(1)
+    
+    with open(targets_file, "r") as f:
+        targets = [line.strip() for line in f if line.strip()]
+
+    all_data = {}
+
+    #Run traceroute for each IP
+    for ip in targets:
+        print(f"\n" + "="*40)
+        print(f"TRACING: {ip}")
+        print("="*40)
+
+        try:
+            hop_data = traceroute(ip)
+            all_data[ip] = hop_data
+        except Exception as e:
+            print(f"Failed to trace {ip}: {e}")
+        
+        time.sleep(1)
+
+
+    #Save all results to a JSON file
+    output_file = "results.json"
+    with open(output_file, "w") as f:
+        json.dump(all_data, f, indent=4)
+
+    print(f"\nResults saved to {output_file}")
