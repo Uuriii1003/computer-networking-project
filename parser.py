@@ -79,13 +79,17 @@ def send_and_parse(response, protocol, rtt, ttl):
     # We reached it if the sender's IP matches our target
     # OR if it's an ICMP Port Unreachable (Type 3)
     is_destination = False
+    if response.haslayer(IP) and hasattr(response, 'dst_target'):
+         if sender_ip == response.dst_target:
+             is_destination = True
+
     if response.haslayer(ICMP):
-        # Type 0 is Echo Reply (for ICMP probes)
-        # Type 3 is Destination Unreachable (common for UDP probes)
+        # Type 0: Echo Reply (Reached destination via ICMP)
+        # Type 3: Port Unreachable (Reached destination via UDP/TCP)
         if response[ICMP].type in [0, 3]:
             is_destination = True
-    elif response.haslayer(IP) and not response.haslayer(ICMP):
-        # If we get a direct TCP SYN/ACK or similar
+    elif not response.haslayer(ICMP):
+        # If we got a direct TCP response (like a SYN/ACK), we are at the destination
         is_destination = True
 
     return {
@@ -96,7 +100,7 @@ def send_and_parse(response, protocol, rtt, ttl):
     }
 
 def get_hostname(ip):
-    if ip == "*":
+    if ip is None or ip == "*":
         return None
     try:
         # This reaches out to the internet to find the name (e.g., google.com)
@@ -104,12 +108,12 @@ def get_hostname(ip):
         return name
     except socket.herror:
         # If no name is found, just return the IP or None
-        return None
+        return "Unknown"
     
 if __name__ == "__main__":
     # Create a fake packet (Target Google, TTL 1 to hit your own router)
     from scapy.all import IP, ICMP
-    test_packet = IP(dst="8.8.8.8", ttl=1)/ICMP()
+    test_packet = IP(src="8.8.8.8")/ICMP(type=0)
     
-    print("Testing parser...")
-    #print(send_and_parse(test_packet, 2))
+    test_result = send_and_parse(test_packet, "ICMP", 15.55, 1)
+    print(f"Test Result: {test_result}")
