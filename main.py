@@ -1,6 +1,12 @@
 import time
 from packets import create_probe
 from parser import send_and_parse
+import os
+import sys
+
+if os.geteuid() != 0:
+    print("Error: This script must be run with 'sudo' to send raw packets.")
+    sys.exit(1)
 
 
 def traceroute(
