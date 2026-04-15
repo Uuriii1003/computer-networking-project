@@ -40,9 +40,16 @@ def traceroute(
                 # 📡 Send + parse (Person 2)
                 result = send_and_parse(packet, timeout)
 
-                # 🧠 Add orchestrator-controlled fields
-                result["ttl"] = ttl
-                result["proto"] = protocol
+                # RTT in ms
+                rtt = (end - start) * 1000
+
+                # 🔹 Parse response (Person 2)
+                result = parse_response(
+                    response=response,
+                    protocol=protocol,
+                    rtt=rtt,
+                    ttl=ttl
+                )
 
                 ttl_results.append(result)
 

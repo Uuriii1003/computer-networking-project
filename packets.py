@@ -22,12 +22,8 @@ def create_probe(target, ttl, proto, port, size):
     else:
         raise ValueError(f"Unsupported protocol: {proto}")
     
-# probe = create_probe("8.8.8.8", 64, "TCP", 80, 10)
-# probe.show()
-
-# I'm gonna change it to this
-
 if __name__ == "__main__":
     print("Testing Packet Generation...")
     probe = create_probe("8.8.8.8", 1, "TCP", 80, 10)
     probe.show()
+    
