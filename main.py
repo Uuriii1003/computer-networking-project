@@ -1,7 +1,7 @@
 import time
 from scapy.all import sr1
 from packets import create_probe
-from parser import parse_response
+from parser import send_and_parse
 
 
 def traceroute(
@@ -48,7 +48,7 @@ def traceroute(
                 rtt = (end - start) * 1000
 
                 # 🔹 Parse response (Person 2)
-                result = parse_response(
+                result = send_and_parse(
                     response=response,
                     protocol=protocol,
                     rtt=rtt,
