@@ -1,123 +1,77 @@
 import time
 import json
+import os
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from scapy.all import sr1
 from packets import create_probe
 from parser import send_and_parse
-import os
-import sys
 
-#Permission check
+# Permission check
 if os.geteuid() != 0:
-    print("Error: This script must be run with 'sudo' to send raw packets.")
+    print("Error: This script must be run with 'sudo'.")
     sys.exit(1)
 
+def probe_task(target_ip, ttl, protocol, dport, packet_size, timeout):
+    """The individual task for one protocol probe."""
+    packet = create_probe(target_ip, ttl, protocol, dport, packet_size)
+    
+    start = time.perf_counter()
+    response = sr1(packet, timeout=timeout, verbose=0)
+    end = time.perf_counter()
+    
+    rtt = (end - start) * 1000
+    
+    result = send_and_parse(response, protocol, rtt, ttl)
+    # Ensure metadata is attached for Person 3's UI
+    result["protocol"] = protocol
+    result["ttl"] = ttl
+    return result
 
-def traceroute(
-    target_ip,
-    min_ttl=1,
-    max_ttl=30,
-    num_series=1,
-    timeout=2,
-    wait_time=0.5,
-    dport=33434,
-    packet_size=60
-):
+def traceroute(target_ip, max_ttl=30, timeout=0.8):
     results = []
+    print(f"🚀 Fast-Tracing {target_ip}...")
 
-    print(f"Tracing route to {target_ip}...\n")
+    for ttl in range(1, max_ttl + 1):
+        print(f"TTL {ttl}: Sending UDP, TCP, ICMP simultaneously...")
+        
+        # SENDS ALL 3 PROTOCOLS AT ONCE
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(probe_task, target_ip, ttl, proto, 33434, 60, timeout)
+                for proto in ["UDP", "TCP", "ICMP"]
+            ]
+            ttl_results = [f.result() for f in futures]
 
-    # TTL loop (the staircase)
-    for ttl in range(min_ttl, max_ttl + 1):
-        print(f"TTL = {ttl}")
-
-        ttl_results = []
-
-        # Series loop
-        for series in range(num_series):
-
-            # Protocol loop
-            for protocol in ["UDP", "TCP", "ICMP"]:
-
-                # 🔹 Build packet (Person 1)
-                packet = create_probe(
-                    target_ip,
-                    ttl,
-                    protocol,
-                    dport,
-                    packet_size
-                )
-
-                # 🔹 Send + measure RTT
-                start = time.perf_counter()
-                response = sr1(packet, timeout=timeout, verbose=0)
-                end = time.perf_counter()
-
-                # RTT in ms
-                rtt = (end - start) * 1000
-
-                # 🔹 Parse response (Person 2)
-                result = send_and_parse(
-                    response=response,
-                    protocol=protocol,
-                    rtt=rtt,
-                    ttl=ttl
-                )
-
-                ttl_results.append(result)
-
-                # Print live output (like real traceroute)
-                if result["ip"] is None:
-                    print(f"  {protocol}: *")
-                else:
-                    print(f"  {protocol}: {result['ip']} ({result['name']}) - {result['rtt']:.2f} ms")
-
-                # 🔹 Stop if destination reached
-                if result["is_destination"]:
-                    results.append(ttl_results)
-                    print("\n✅ Destination reached!\n")
-                    return results
-
-                # 🔹 Wait between packets
-                time.sleep(wait_time)
+        # Log results to terminal
+        ips = [r['ip'] if r['ip'] else '*' for r in ttl_results]
+        print(f"  Result: {ips}")
 
         results.append(ttl_results)
 
-    print("\n⚠️ Max TTL reached without hitting destination.\n")
+        # Stop if ANY of the three protocols hit the target
+        if any(r["is_destination"] for r in ttl_results):
+            print(f"✅ Destination reached at hop {ttl}!")
+            return results
+
     return results
 
-
-# 🚀 Entry point
 if __name__ == "__main__":
-    #Read IPs from the text file
     targets_file = "targets.txt"
-
     if not os.path.exists(targets_file):
-        print(f"❌ Error: {targets_file} not found. Please create it first.")
+        print("❌ targets.txt not found!")
         sys.exit(1)
     
     with open(targets_file, "r") as f:
         targets = [line.strip() for line in f if line.strip()]
 
     all_data = {}
-
-    #Run traceroute for each IP
     for ip in targets:
-        print(f"\n" + "="*40)
-        print(f"TRACING: {ip}")
-        print("="*40)
-
         try:
-            hop_data = traceroute(ip)
-            all_data[ip] = hop_data
+            all_data[ip] = traceroute(ip)
         except Exception as e:
-            print(f"Failed to trace {ip}: {e}")
-        
-        time.sleep(1)
+            print(f"Error on {ip}: {e}")
 
-
-    #Save all results to a JSON file
-    output_file = "results.json"
-    with open(output_file, "w") as f:
+    with open("results.json", "w") as f:
         json.dump(all_data, f, indent=4)
-
-    print(f"\nResults saved to {output_file}")
+    print("\n💾 Results saved to results.json")
